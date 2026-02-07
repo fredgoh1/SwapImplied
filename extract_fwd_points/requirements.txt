@@ -1,0 +1,10 @@
+# Required packages for USD/SGD Forward Points Extractor
+
+# Core dependencies (required)
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+openpyxl>=3.1.0
+
+# Optional dependencies (for Selenium mode)
+selenium>=4.15.0
+webdriver-manager>=4.0.0
