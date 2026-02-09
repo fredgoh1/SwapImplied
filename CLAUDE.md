@@ -60,6 +60,30 @@ python extract_fwd_points/browse_ai_extractor.py --task-id <task_id>
 ```
 Credentials stored in `Browse_AI` file (api key, workspace_id, robot_id).
 
+### Run full pipeline (recommended daily workflow)
+```bash
+# Full pipeline: Browse AI screenshots → manual input → calculate → post to Roam
+python run_pipeline.py
+
+# Skip Browse AI, scrape forward points from investing.com instead
+python run_pipeline.py --no-browse-ai
+
+# Use Selenium for more reliable scraping
+python run_pipeline.py --selenium
+
+# Skip Roam Research posting
+python run_pipeline.py --no-roam
+
+# Only update input files, skip calculation
+python run_pipeline.py --skip-calc
+```
+
+### Post latest rates to Roam Research
+```bash
+python post_to_roam.py
+```
+Credentials stored in `Roam_Research` file (ROAM_API_TOKEN, ROAM_GRAPH_NAME).
+
 ## Architecture
 
 ### Data Flow
@@ -73,7 +97,13 @@ swap_implied_input/input_master_{1m,3m,6m}.xlsx
 calc_swap_implied/calculate_swap_implied_rates.py
          ↓
 Output Excel with implied SGD rates
+         ↓
+post_to_roam.py → Roam Research daily notes
 ```
+
+**`run_pipeline.py`** orchestrates the entire flow above in a single command.
+It uses Browse AI for forward points by default (opens screenshots in Preview.app
+for the user to read bid/ask values), with `--no-browse-ai` to scrape instead.
 
 ### Key Classes
 
