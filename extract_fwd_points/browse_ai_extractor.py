@@ -192,7 +192,8 @@ def parse_forward_points_from_table(task):
     results = {}
 
     for row in rows:
-        name = row.get("Name", "")
+        # Column is "Pair Name" (not "Name"); normalize non-breaking spaces
+        name = row.get("Pair Name", row.get("Name", "")).replace("\xa0", " ")
         for tenor, patterns in tenor_patterns.items():
             if any(p in name for p in patterns):
                 try:
