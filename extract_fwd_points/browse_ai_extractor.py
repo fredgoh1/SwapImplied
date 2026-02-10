@@ -2,8 +2,8 @@
 """
 Browse.AI Forward Points Screenshot Extractor
 
-Triggers a Browse.AI robot to capture screenshots of forward points data
-and downloads the captured screenshots.
+Triggers a Browse.AI robot to capture forward points data.
+Supports both table extraction (default) and screenshot capture modes.
 
 Usage:
     python browse_ai_extractor.py                    # Run and download screenshots
@@ -161,6 +161,52 @@ def download_screenshot(url, output_path):
     print(f"    Saved: {output_path}")
 
 
+def parse_forward_points_from_table(task):
+    """
+    Parse forward points bid/ask from Browse AI table bot capturedLists data.
+
+    Args:
+        task: Completed task dict from Browse AI API
+
+    Returns:
+        dict: {'1M': mid, '3M': mid, '6M': mid} or empty dict on failure
+    """
+    captured_lists = task.get("capturedLists", {})
+
+    # capturedLists is a dict of list_name -> list of row dicts
+    rows = []
+    for list_name, list_rows in captured_lists.items():
+        if isinstance(list_rows, list):
+            rows.extend(list_rows)
+
+    if not rows:
+        print("  No table data found in capturedLists.")
+        return {}
+
+    # Match both "USDSGD 1M FWD" style and "USD/SGD - 1 Month" style names
+    tenor_patterns = {
+        "1M": ["1M", "1 Month"],
+        "3M": ["3M", "3 Months"],
+        "6M": ["6M", "6 Months"],
+    }
+    results = {}
+
+    for row in rows:
+        name = row.get("Name", "")
+        for tenor, patterns in tenor_patterns.items():
+            if any(p in name for p in patterns):
+                try:
+                    bid = float(row.get("Bid", "").replace(",", ""))
+                    ask = float(row.get("Ask", "").replace(",", ""))
+                    mid = (bid + ask) / 2.0
+                    results[tenor] = {"bid": bid, "ask": ask, "mid": mid}
+                except (ValueError, TypeError) as e:
+                    print(f"  Warning: Could not parse bid/ask for {tenor}: {e}")
+                break
+
+    return results
+
+
 def load_credentials(credentials_file):
     """
     Load Browse.AI credentials from file.
@@ -169,7 +215,7 @@ def load_credentials(credentials_file):
         credentials_file: Path to credentials file
 
     Returns:
-        tuple: (api_key, workspace_id, robot_id)
+        tuple: (api_key, workspace_id, robot_id, screenshot_robot_id)
     """
     credentials = {}
 
@@ -185,11 +231,12 @@ def load_credentials(credentials_file):
     api_key = credentials.get('browse_ai_api')
     workspace_id = credentials.get('workspace_id')
     robot_id = credentials.get('robot_id')
+    screenshot_robot_id = credentials.get('screenshot_robot_id')
 
     if not api_key or not robot_id:
         raise ValueError("Missing required credentials (browse_ai_api and robot_id)")
 
-    return api_key, workspace_id, robot_id
+    return api_key, workspace_id, robot_id, screenshot_robot_id
 
 
 def main():
@@ -242,9 +289,11 @@ def main():
         credentials_path = Path(__file__).parent / credentials_path
 
     print(f"Loading credentials from: {credentials_path}")
-    api_key, workspace_id, robot_id = load_credentials(credentials_path)
+    api_key, workspace_id, robot_id, screenshot_robot_id = load_credentials(credentials_path)
     print(f"  Workspace ID: {workspace_id}")
     print(f"  Robot ID: {robot_id}")
+    if screenshot_robot_id:
+        print(f"  Screenshot Robot ID: {screenshot_robot_id}")
     print()
 
     # Initialize client

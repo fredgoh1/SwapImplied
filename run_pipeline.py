@@ -4,14 +4,15 @@ End-to-end pipeline for USD/SGD FX swap implied SGD interest rates.
 
 Steps:
     1. Extract SOFR rates & FX spot rate
-    2. Run Browse AI robot to capture forward points screenshots
-    3. Prompt user for forward points bid/ask from screenshots
+    2. Run Browse AI table bot to extract forward points (auto-parse bid/ask)
+    3. User confirms parsed values (or enters manually if rejected/failed)
     4. Update master input files
     5. Calculate implied rates for each tenor
     6. Post latest rates to Roam Research
 
 Usage:
-    python run_pipeline.py                         # Full pipeline with Browse AI
+    python run_pipeline.py                         # Full pipeline (table bot, auto-parse)
+    python run_pipeline.py --browse-ai-screenshot  # Old screenshot bot + manual input
     python run_pipeline.py --no-browse-ai          # Scrape forward points instead
     python run_pipeline.py --no-roam               # Skip Roam posting
     python run_pipeline.py --no-browse-ai --no-roam
@@ -41,6 +42,7 @@ from extract_fwd_points.browse_ai_extractor import (
     BrowseAIClient,
     load_credentials as load_browse_ai_credentials,
     download_screenshot,
+    parse_forward_points_from_table,
 )
 from calc_swap_implied.calculate_swap_implied_rates import process_excel_file
 from post_to_roam import (
@@ -79,11 +81,57 @@ def step_extract_sofr_and_fx(use_selenium=False):
     return sofr_rates, fx_rate
 
 
-def step_browse_ai():
-    """Step 2: Run Browse AI robot and download screenshots."""
+def step_browse_ai_table():
+    """Step 2: Run Browse AI table bot and parse forward points automatically."""
     print()
     print("=" * 70)
-    print("STEP 2: RUN BROWSE AI ROBOT")
+    print("STEP 2: RUN BROWSE AI TABLE BOT")
+    print("=" * 70)
+
+    credentials_path = PROJECT_ROOT / "Browse_AI"
+    if not credentials_path.exists():
+        print(f"Browse AI credentials file not found: {credentials_path}")
+        return None
+
+    api_key, workspace_id, robot_id, _ = load_browse_ai_credentials(str(credentials_path))
+    client = BrowseAIClient(api_key, robot_id)
+
+    # Fetch robot info
+    robot_info = client.get_robot_info()
+    if robot_info:
+        print(f"  Robot Name: {robot_info.get('name', 'Unknown')}")
+
+    # Run task
+    task_result = client.run_task()
+    task_id = task_result.get("id")
+
+    # Wait for completion
+    task = client.wait_for_completion(task_id)
+
+    # Parse table data
+    parsed = parse_forward_points_from_table(task)
+    if not parsed:
+        print("\nNo forward points found in table data.")
+        return None
+
+    # Display parsed values
+    print()
+    print("  Parsed forward points from Browse AI table:")
+    print(f"  {'Tenor':<8} {'Bid':>10} {'Ask':>10} {'Mid':>10}")
+    print(f"  {'-'*8} {'-'*10} {'-'*10} {'-'*10}")
+    for tenor in ["1M", "3M", "6M"]:
+        if tenor in parsed:
+            d = parsed[tenor]
+            print(f"  {tenor:<8} {d['bid']:>10.2f} {d['ask']:>10.2f} {d['mid']:>10.2f}")
+
+    return parsed
+
+
+def step_browse_ai_screenshot():
+    """Step 2: Run Browse AI screenshot robot and download screenshots."""
+    print()
+    print("=" * 70)
+    print("STEP 2: RUN BROWSE AI SCREENSHOT ROBOT")
     print("=" * 70)
 
     credentials_path = PROJECT_ROOT / "Browse_AI"
@@ -91,8 +139,14 @@ def step_browse_ai():
         print(f"Browse AI credentials file not found: {credentials_path}")
         return False
 
-    api_key, workspace_id, robot_id = load_browse_ai_credentials(str(credentials_path))
-    client = BrowseAIClient(api_key, robot_id)
+    api_key, workspace_id, robot_id, screenshot_robot_id = load_browse_ai_credentials(
+        str(credentials_path)
+    )
+    if not screenshot_robot_id:
+        print("No screenshot_robot_id found in credentials.")
+        return False
+
+    client = BrowseAIClient(api_key, screenshot_robot_id)
 
     # Fetch robot info
     robot_info = client.get_robot_info()
@@ -149,12 +203,40 @@ def step_browse_ai():
     return True
 
 
-def step_forward_points(use_browse_ai=True, use_selenium=False):
-    """Step 2+3: Get forward points (Browse AI + manual, or scrape)."""
-    if use_browse_ai:
-        success = step_browse_ai()
+def step_forward_points(use_browse_ai=True, use_browse_ai_screenshot=False,
+                        use_selenium=False):
+    """Step 2+3: Get forward points (Browse AI table, screenshot, or scrape)."""
+    if use_browse_ai and not use_browse_ai_screenshot:
+        # Default: table bot with automatic parsing
+        parsed = step_browse_ai_table()
+
+        if parsed:
+            # Ask user for confirmation
+            print()
+            confirm = input("  Accept these values? [Y/n]: ").strip().lower()
+            if confirm in ("", "y", "yes"):
+                # Use mid values as forward points
+                forward_points = {}
+                for tenor in ["1M", "3M", "6M"]:
+                    if tenor in parsed:
+                        forward_points[tenor] = parsed[tenor]["mid"]
+                print("  Using parsed forward points.")
+                return forward_points
+            else:
+                print("  Rejected. Falling back to manual input.")
+
+        # Fall back to manual input
+        print()
+        print("=" * 70)
+        print("STEP 3: ENTER FORWARD POINTS MANUALLY")
+        print("=" * 70)
+        forward_points = manual_forward_points_input()
+
+    elif use_browse_ai_screenshot:
+        # Old screenshot flow
+        success = step_browse_ai_screenshot()
         if not success:
-            print("\nBrowse AI failed. Falling back to manual input.")
+            print("\nBrowse AI screenshot failed. Falling back to manual input.")
 
         # Prompt user for bid/ask from screenshots
         print()
@@ -162,7 +244,9 @@ def step_forward_points(use_browse_ai=True, use_selenium=False):
         print("STEP 3: ENTER FORWARD POINTS FROM SCREENSHOTS")
         print("=" * 70)
         forward_points = manual_forward_points_input()
+
     else:
+        # Scrape from investing.com
         print()
         print("=" * 70)
         print("STEP 2-3: SCRAPE FORWARD POINTS")
@@ -261,7 +345,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_pipeline.py                          # Full pipeline (Browse AI)
+  python run_pipeline.py                          # Full pipeline (Browse AI table bot)
+  python run_pipeline.py --browse-ai-screenshot   # Use old screenshot bot + manual input
   python run_pipeline.py --no-browse-ai           # Scrape forward points
   python run_pipeline.py --no-roam                # Skip Roam posting
   python run_pipeline.py --no-browse-ai --no-roam # Scrape, no Roam
@@ -273,6 +358,11 @@ Examples:
         "--no-browse-ai",
         action="store_true",
         help="Skip Browse AI; scrape forward points from investing.com instead",
+    )
+    parser.add_argument(
+        "--browse-ai-screenshot",
+        action="store_true",
+        help="Use Browse AI screenshot bot + manual input (old workflow)",
     )
     parser.add_argument(
         "--selenium",
@@ -295,7 +385,13 @@ Examples:
     print("=" * 70)
     print("USD/SGD SWAP IMPLIED RATE PIPELINE")
     print("=" * 70)
-    print(f"  Browse AI:  {'OFF' if args.no_browse_ai else 'ON'}")
+    if args.no_browse_ai:
+        browse_mode = "OFF (scraping)"
+    elif args.browse_ai_screenshot:
+        browse_mode = "SCREENSHOT (manual input)"
+    else:
+        browse_mode = "TABLE (auto-parse)"
+    print(f"  Browse AI:  {browse_mode}")
     print(f"  Selenium:   {'ON' if args.selenium else 'OFF'}")
     print(f"  Calculate:  {'OFF' if args.skip_calc else 'ON'}")
     print(f"  Post Roam:  {'OFF' if args.no_roam else 'ON'}")
@@ -309,7 +405,9 @@ Examples:
     # Step 2+3: Forward points
     use_browse_ai = not args.no_browse_ai
     forward_points = step_forward_points(
-        use_browse_ai=use_browse_ai, use_selenium=args.selenium
+        use_browse_ai=use_browse_ai,
+        use_browse_ai_screenshot=args.browse_ai_screenshot,
+        use_selenium=args.selenium,
     )
     if not forward_points:
         print("\nPipeline aborted: failed to get forward points.")

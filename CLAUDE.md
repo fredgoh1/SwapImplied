@@ -62,8 +62,11 @@ Credentials stored in `Browse_AI` file (api key, workspace_id, robot_id).
 
 ### Run full pipeline (recommended daily workflow)
 ```bash
-# Full pipeline: Browse AI screenshots → manual input → calculate → post to Roam
+# Full pipeline: Browse AI table bot → auto-parse bid/ask → calculate → post to Roam
 python run_pipeline.py
+
+# Use old screenshot bot + manual input instead of table bot
+python run_pipeline.py --browse-ai-screenshot
 
 # Skip Browse AI, scrape forward points from investing.com instead
 python run_pipeline.py --no-browse-ai
@@ -102,8 +105,9 @@ post_to_roam.py → Roam Research daily notes
 ```
 
 **`run_pipeline.py`** orchestrates the entire flow above in a single command.
-It uses Browse AI for forward points by default (opens screenshots in Preview.app
-for the user to read bid/ask values), with `--no-browse-ai` to scrape instead.
+By default it uses the Browse AI table bot to automatically parse forward points
+bid/ask values. Use `--browse-ai-screenshot` for the old screenshot + manual input
+flow, or `--no-browse-ai` to scrape from investing.com instead.
 
 ### Key Classes
 
@@ -127,8 +131,9 @@ for the user to read bid/ask values), with `--no-browse-ai` to scrape instead.
 - Prevents duplicate entries for the same date
 
 **`BrowseAIClient`** (`extract_fwd_points/browse_ai_extractor.py`):
-- Alternative forward points extraction via Browse.AI robot
-- Triggers robot tasks and downloads captured screenshots
+- Forward points extraction via Browse.AI robots (table bot or screenshot bot)
+- Table bot (default): returns structured bid/ask data via `capturedLists`, parsed by `parse_forward_points_from_table()`
+- Screenshot bot (`--browse-ai-screenshot`): captures screenshots for manual reading
 - Uses Browse.AI API v2 with credentials from `Browse_AI` file
 
 ### Day Count Conventions
@@ -138,9 +143,12 @@ for the user to read bid/ask values), with `--no-browse-ai` to scrape instead.
 ### Master File Format
 Each `input_master_{tenor}.xlsx` must have columns: `Date`, `{x}mSOFR`, `USDSGD_FX`, `ForwardPoints`
 
+### Output File Format
+Each `output_master_{tenor}.xlsx` has columns: `Trade_Date`, `Spot_Date`, `Forward_Date`, `Actual_Days`, `USD_SOFR_{x}M_Pct`, `Spot_Rate`, `Forward_Points_pips`, `Forward_Rate`, `Implied_SGD_Rate_Pct`, `Rate_Diff_bps`
+
 ## Data Sources
 - **Term SOFR**: global-rates.com (CME Term SOFR)
-- **Forward Points**: investing.com (USD/SGD forward rates) or Browse.AI screenshot capture
+- **Forward Points**: investing.com (USD/SGD forward rates) or Browse.AI (table bot auto-parse / screenshot capture)
 - **FX Spot**: exchangerate-api.com (free, no API key)
 - **US Holidays**: NY SIFMA calendar
 - **Singapore Holidays**: Ministry of Manpower (MOM)
