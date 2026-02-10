@@ -101,12 +101,15 @@ def step_browse_ai_table():
     if robot_info:
         print(f"  Robot Name: {robot_info.get('name', 'Unknown')}")
 
-    # Run task
-    task_result = client.run_task()
+    # Run task with required input parameters
+    task_result = client.run_task(input_parameters={
+        "originUrl": "https://www.investing.com/currencies/usd-sgd-forward-rates",
+        "usd_sgd_forward_rates_limit": 12,
+    })
     task_id = task_result.get("id")
 
-    # Wait for completion
-    task = client.wait_for_completion(task_id)
+    # Wait for completion (10 min timeout — table extraction can be slow)
+    task = client.wait_for_completion(task_id, max_wait=600)
 
     # Parse table data
     parsed = parse_forward_points_from_table(task)
