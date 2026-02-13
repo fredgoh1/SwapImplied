@@ -141,22 +141,46 @@ def roam_query(token, graph, query, args=None):
     return resp.json()
 
 
-def ensure_daily_note(token, graph, page_title, page_uid):
-    """Create the daily note page if it doesn't already exist."""
-    # Check if page exists
-    query = '[:find ?e :in $ ?title :where [?e :node/title ?title]]'
-    result = roam_query(token, graph, query, args=[page_title])
+def get_page_uid(token, graph, page_title):
+    """Query for the UID of a page by title. Returns None if not found."""
+    query = '[:find ?uid :in $ ?title :where [?e :node/title ?title] [?e :block/uid ?uid]]'
+    response = roam_query(token, graph, query, args=[page_title])
+    # Response format: {"result": [["uid-value"]]} or just [["uid-value"]]
+    result = response.get("result", response) if isinstance(response, dict) else response
+    if result and len(result) > 0:
+        row = result[0]
+        return row[0] if isinstance(row, list) else row
+    return None
 
-    if not result:
-        actions = [{"action": "create-page", "page": {"title": page_title, "uid": page_uid}}]
-        try:
-            roam_write(token, graph, actions)
-            print(f"Created daily note page: {page_title}")
-        except requests.HTTPError:
-            # Page may already exist with a different UID
-            pass
-    else:
-        print(f"Daily note page already exists: {page_title}")
+
+def ensure_daily_note(token, graph, page_title, page_uid):
+    """Create the daily note page if it doesn't already exist.
+
+    Returns the actual UID of the page (which may differ from page_uid
+    if the page was previously created with a different UID).
+    """
+    # Check if page exists and get its actual UID
+    actual_uid = get_page_uid(token, graph, page_title)
+
+    if actual_uid:
+        print(f"Daily note page already exists: {page_title} (uid: {actual_uid})")
+        return actual_uid
+
+    # Page doesn't exist — create it
+    actions = [{"action": "create-page", "page": {"title": page_title, "uid": page_uid}}]
+    try:
+        roam_write(token, graph, actions)
+        print(f"Created daily note page: {page_title}")
+        return page_uid
+    except requests.HTTPError:
+        # Page may have been created concurrently — query for its UID
+        actual_uid = get_page_uid(token, graph, page_title)
+        if actual_uid:
+            print(f"Page already exists (created concurrently): {page_title} (uid: {actual_uid})")
+            return actual_uid
+        # If we still can't find it, fall back to the expected UID
+        print(f"Warning: create-page failed but page not found. Using expected uid: {page_uid}")
+        return page_uid
 
 
 def post_rates_to_roam(token, graph, page_uid, rates):
@@ -192,8 +216,8 @@ def main():
         if tenor in rates:
             print(f"  {tenor.upper()}: {rates[tenor]:.4f}%")
 
-    ensure_daily_note(token, graph, page_title, page_uid)
-    post_rates_to_roam(token, graph, page_uid, rates)
+    actual_uid = ensure_daily_note(token, graph, page_title, page_uid)
+    post_rates_to_roam(token, graph, actual_uid, rates)
 
     print(f"\nSuccessfully posted rates to Roam daily note: {page_title}")
 

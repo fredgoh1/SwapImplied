@@ -336,8 +336,8 @@ def step_post_to_roam():
         if tenor in rates:
             print(f"  {tenor.upper()}: {rates[tenor]:.4f}%")
 
-    ensure_daily_note(token, graph, page_title, page_uid)
-    post_rates_to_roam(token, graph, page_uid, rates)
+    actual_uid = ensure_daily_note(token, graph, page_title, page_uid)
+    post_rates_to_roam(token, graph, actual_uid, rates)
 
     print(f"\nSuccessfully posted rates to Roam daily note: {page_title}")
 
