@@ -108,8 +108,8 @@ def step_browse_ai_table():
     })
     task_id = task_result.get("id")
 
-    # Wait for completion (10 min timeout — table extraction can be slow)
-    task = client.wait_for_completion(task_id, max_wait=600)
+    # Wait for completion (20 min timeout — table extraction can be slow)
+    task = client.wait_for_completion(task_id, max_wait=1200)
 
     # Parse table data
     parsed = parse_forward_points_from_table(task)
