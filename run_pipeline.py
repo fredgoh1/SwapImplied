@@ -5,15 +5,15 @@ End-to-end pipeline for USD/SGD FX swap implied SGD interest rates.
 Steps:
     1. Extract SOFR rates & FX spot rate
     2. Run Browse AI table bot to extract forward points (auto-parse bid/ask)
-    3. User confirms parsed values (or enters manually if rejected/failed)
-    4. Update master input files
-    5. Calculate implied rates for each tenor
-    6. Post latest rates to Roam Research
+    3. Update master input files
+    4. Calculate implied rates for each tenor
+    5. Post latest rates to Roam Research
 
 Usage:
     python run_pipeline.py                         # Full pipeline (table bot, auto-parse)
     python run_pipeline.py --browse-ai-screenshot  # Old screenshot bot + manual input
     python run_pipeline.py --no-browse-ai          # Scrape forward points instead
+    python run_pipeline.py --notion-fallback        # Read forward points from Notion table
     python run_pipeline.py --no-roam               # Skip Roam posting
     python run_pipeline.py --no-browse-ai --no-roam
     python run_pipeline.py --skip-calc             # Only update input files
@@ -24,6 +24,7 @@ import argparse
 import subprocess
 import sys
 import os
+from datetime import date
 from pathlib import Path
 
 # Add project root to path so we can import from sibling packages
@@ -52,6 +53,12 @@ from post_to_roam import (
     date_to_roam_uid,
     ensure_daily_note,
     post_rates_to_roam,
+)
+from extract_fwd_points.notion_fallback import (
+    load_credentials as load_notion_credentials,
+    write_failure_code_to_notion,
+    read_forward_points_from_notion,
+    send_failure_email,
 )
 
 
@@ -206,34 +213,77 @@ def step_browse_ai_screenshot():
     return True
 
 
+def step_forward_points_from_notion(date_str):
+    """Read forward points from Notion table (recovery flow)."""
+    print()
+    print("=" * 70)
+    print("STEP 2: READ FORWARD POINTS FROM NOTION")
+    print("=" * 70)
+    try:
+        notion_token, database_id, _, _, _ = load_notion_credentials()
+    except (FileNotFoundError, ValueError) as e:
+        print(f"  Error loading Notion credentials: {e}")
+        return None
+
+    try:
+        forward_points = read_forward_points_from_notion(notion_token, database_id, date_str)
+    except (ValueError, RuntimeError) as e:
+        print(f"  Error reading from Notion: {e}")
+        return None
+
+    print(f"  {'Tenor':<8} {'Mid':>10}")
+    print(f"  {'-'*8} {'-'*10}")
+    for tenor in ["1M", "3M", "6M"]:
+        if tenor in forward_points:
+            print(f"  {tenor:<8} {forward_points[tenor]:>10.2f}")
+    return forward_points
+
+
+def _handle_browse_ai_failure(date_str, error_message="Browse AI failed to parse forward points."):
+    """Write today's date to Notion and send a failure email."""
+    try:
+        notion_token, database_id, email_from, email_to, app_password = load_notion_credentials()
+    except (FileNotFoundError, ValueError) as e:
+        print(f"  Could not load Notion credentials ({e}). Skipping notification.")
+        return
+
+    # Write placeholder row to Notion
+    try:
+        write_failure_code_to_notion(notion_token, database_id, date_str)
+        print(f"  Created Notion row for {date_str} (fill in bid/ask values).")
+    except Exception as e:
+        print(f"  Warning: could not write to Notion: {e}")
+
+    # Send email alert
+    try:
+        send_failure_email(email_from, email_to, app_password, error_message)
+        print(f"  Failure email sent to {email_to}.")
+    except Exception as e:
+        print(f"  Warning: could not send email: {e}")
+
+
 def step_forward_points(use_browse_ai=True, use_browse_ai_screenshot=False,
-                        use_selenium=False):
-    """Step 2+3: Get forward points (Browse AI table, screenshot, or scrape)."""
+                        use_selenium=False, use_notion_fallback=False):
+    """Step 2+3: Get forward points (Notion fallback, Browse AI table, screenshot, or scrape)."""
+    if use_notion_fallback:
+        return step_forward_points_from_notion(date.today().isoformat())
+
     if use_browse_ai and not use_browse_ai_screenshot:
         # Default: table bot with automatic parsing
         parsed = step_browse_ai_table()
 
         if parsed:
-            # Ask user for confirmation
-            print()
-            confirm = input("  Accept these values? [Y/n]: ").strip().lower()
-            if confirm in ("", "y", "yes"):
-                # Use mid values as forward points
-                forward_points = {}
-                for tenor in ["1M", "3M", "6M"]:
-                    if tenor in parsed:
-                        forward_points[tenor] = parsed[tenor]["mid"]
-                print("  Using parsed forward points.")
-                return forward_points
-            else:
-                print("  Rejected. Falling back to manual input.")
+            # Auto-accept Browse AI values — no confirmation needed
+            forward_points = {
+                tenor: parsed[tenor]["mid"]
+                for tenor in ["1M", "3M", "6M"]
+                if tenor in parsed
+            }
+            print("  Auto-accepted Browse AI values.")
+            return forward_points
 
-        # Fall back to manual input
-        print()
-        print("=" * 70)
-        print("STEP 3: ENTER FORWARD POINTS MANUALLY")
-        print("=" * 70)
-        forward_points = manual_forward_points_input()
+        # Browse AI failed — return None so caller triggers notification
+        return None
 
     elif use_browse_ai_screenshot:
         # Old screenshot flow
@@ -351,6 +401,7 @@ Examples:
   python run_pipeline.py                          # Full pipeline (Browse AI table bot)
   python run_pipeline.py --browse-ai-screenshot   # Use old screenshot bot + manual input
   python run_pipeline.py --no-browse-ai           # Scrape forward points
+  python run_pipeline.py --notion-fallback         # Read fwd points from Notion (recovery)
   python run_pipeline.py --no-roam                # Skip Roam posting
   python run_pipeline.py --no-browse-ai --no-roam # Scrape, no Roam
   python run_pipeline.py --skip-calc              # Only update input files
@@ -382,22 +433,30 @@ Examples:
         action="store_true",
         help="Skip calculation step (only update input files)",
     )
+    parser.add_argument(
+        "--notion-fallback",
+        action="store_true",
+        help="Read forward points from Notion table (use after manual entry in Notion)",
+    )
 
     args = parser.parse_args()
 
     print("=" * 70)
     print("USD/SGD SWAP IMPLIED RATE PIPELINE")
     print("=" * 70)
-    if args.no_browse_ai:
+    if args.notion_fallback:
+        browse_mode = "OFF (Notion fallback)"
+    elif args.no_browse_ai:
         browse_mode = "OFF (scraping)"
     elif args.browse_ai_screenshot:
         browse_mode = "SCREENSHOT (manual input)"
     else:
         browse_mode = "TABLE (auto-parse)"
-    print(f"  Browse AI:  {browse_mode}")
-    print(f"  Selenium:   {'ON' if args.selenium else 'OFF'}")
-    print(f"  Calculate:  {'OFF' if args.skip_calc else 'ON'}")
-    print(f"  Post Roam:  {'OFF' if args.no_roam else 'ON'}")
+    print(f"  Browse AI:      {browse_mode}")
+    print(f"  Notion fallback: {'ON' if args.notion_fallback else 'OFF'}")
+    print(f"  Selenium:       {'ON' if args.selenium else 'OFF'}")
+    print(f"  Calculate:      {'OFF' if args.skip_calc else 'ON'}")
+    print(f"  Post Roam:      {'OFF' if args.no_roam else 'ON'}")
 
     # Step 1: Extract SOFR & FX
     sofr_rates, fx_rate = step_extract_sofr_and_fx(use_selenium=args.selenium)
@@ -406,14 +465,23 @@ Examples:
         return 1
 
     # Step 2+3: Forward points
-    use_browse_ai = not args.no_browse_ai
+    use_browse_ai = not args.no_browse_ai and not args.notion_fallback
     forward_points = step_forward_points(
         use_browse_ai=use_browse_ai,
         use_browse_ai_screenshot=args.browse_ai_screenshot,
         use_selenium=args.selenium,
+        use_notion_fallback=args.notion_fallback,
     )
     if not forward_points:
-        print("\nPipeline aborted: failed to get forward points.")
+        if use_browse_ai and not args.notion_fallback:
+            print("\nBrowse AI failed. Writing to Notion and sending alert...")
+            _handle_browse_ai_failure(date.today().isoformat())
+            print(
+                "\nPipeline aborted. Fill in the Notion table and rerun with "
+                "--notion-fallback."
+            )
+        else:
+            print("\nPipeline aborted: failed to get forward points.")
         return 1
 
     # Step 4: Update master files

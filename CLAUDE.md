@@ -79,7 +79,20 @@ python run_pipeline.py --no-roam
 
 # Only update input files, skip calculation
 python run_pipeline.py --skip-calc
+
+# Recovery: read forward points from Notion table (after Browse AI failure)
+python run_pipeline.py --notion-fallback
 ```
+
+#### Browse AI failure flow
+If Browse AI fails to parse forward points, the pipeline automatically:
+1. Creates a row in the Notion database with today's date (bid/ask fields blank)
+2. Sends a failure alert email
+3. Aborts with instructions
+
+Recovery: fill in the 6 bid/ask fields in Notion, then rerun with `--notion-fallback`.
+
+Credentials stored in `Notion` file (NOTION_API_TOKEN, NOTION_DATABASE_ID, EMAIL_FROM, EMAIL_TO, EMAIL_APP_PASSWORD).
 
 ### Post latest rates to Roam Research
 ```bash
@@ -106,8 +119,11 @@ post_to_roam.py → Roam Research daily notes
 
 **`run_pipeline.py`** orchestrates the entire flow above in a single command.
 By default it uses the Browse AI table bot to automatically parse forward points
-bid/ask values. Use `--browse-ai-screenshot` for the old screenshot + manual input
-flow, or `--no-browse-ai` to scrape from investing.com instead.
+bid/ask values (no confirmation prompt — values are auto-accepted). On failure it
+writes today's date to Notion and sends an email alert. Use `--notion-fallback` to
+recover by reading manually-entered values from Notion. Use `--browse-ai-screenshot`
+for the old screenshot + manual input flow, or `--no-browse-ai` to scrape from
+investing.com instead.
 
 ### Key Classes
 
@@ -135,6 +151,12 @@ flow, or `--no-browse-ai` to scrape from investing.com instead.
 - Table bot (default): returns structured bid/ask data via `capturedLists`, parsed by `parse_forward_points_from_table()`
 - Screenshot bot (`--browse-ai-screenshot`): captures screenshots for manual reading
 - Uses Browse.AI API v2 with credentials from `Browse_AI` file
+
+**`notion_fallback`** (`extract_fwd_points/notion_fallback.py`):
+- `write_failure_code_to_notion()`: creates a Notion row with today's date when Browse AI fails
+- `read_forward_points_from_notion()`: reads bid/ask values entered manually and returns mid dict
+- `send_failure_email()`: sends Gmail SMTP alert with recovery instructions
+- Credentials from `Notion` file
 
 ### Day Count Conventions
 - **USD (SOFR)**: ACT/360
