@@ -20,68 +20,68 @@ pip install pandas openpyxl requests beautifulsoup4 numpy selenium webdriver-man
 ### Calculate implied rates (main calculation)
 ```bash
 # Auto-detect tenor from column names
-python calc_swap_implied/calculate_swap_implied_rates.py input.xlsx output.xlsx
+python3 calc_swap_implied/calculate_swap_implied_rates.py input.xlsx output.xlsx
 
 # Specify tenor explicitly
-python calc_swap_implied/calculate_swap_implied_rates.py input.xlsx output.xlsx --tenor 3M
+python3 calc_swap_implied/calculate_swap_implied_rates.py input.xlsx output.xlsx --tenor 3M
 ```
 
 ### Update master data files (daily data collection)
 ```bash
 # Fast mode using HTTP requests
-python extract_all_rates/update_swap_implied_data.py
+python3 extract_all_rates/update_swap_implied_data.py
 
 # Reliable mode using Selenium (when requests are blocked)
-python extract_all_rates/update_swap_implied_data.py --selenium
+python3 extract_all_rates/update_swap_implied_data.py --selenium
 
 # Create sample master files
-python extract_all_rates/update_swap_implied_data.py --create-sample
+python3 extract_all_rates/update_swap_implied_data.py --create-sample
 ```
 
 ### Extract forward points only
 ```bash
-python extract_fwd_points/extract_forward_points_selenium.py
-python extract_fwd_points/extract_forward_points_selenium.py --selenium  # More reliable
+python3 extract_fwd_points/extract_forward_points_selenium.py
+python3 extract_fwd_points/extract_forward_points_selenium.py --selenium  # More reliable
 ```
 
 ### Extract forward points via Browse.AI (screenshot capture)
 ```bash
 # Run robot and download screenshots
-python extract_fwd_points/browse_ai_extractor.py
+python3 extract_fwd_points/browse_ai_extractor.py
 
 # Save to custom directory
-python extract_fwd_points/browse_ai_extractor.py --output-dir ./my_screenshots
+python3 extract_fwd_points/browse_ai_extractor.py --output-dir ./my_screenshots
 
 # Start task without waiting
-python extract_fwd_points/browse_ai_extractor.py --no-wait
+python3 extract_fwd_points/browse_ai_extractor.py --no-wait
 
 # Check status of existing task
-python extract_fwd_points/browse_ai_extractor.py --task-id <task_id>
+python3 extract_fwd_points/browse_ai_extractor.py --task-id <task_id>
 ```
 Credentials stored in `Browse_AI` file (api key, workspace_id, robot_id).
 
 ### Run full pipeline (recommended daily workflow)
 ```bash
 # Full pipeline: Browse AI table bot → auto-parse bid/ask → calculate → post to Roam
-python run_pipeline.py
+python3 run_pipeline.py
 
 # Use old screenshot bot + manual input instead of table bot
-python run_pipeline.py --browse-ai-screenshot
+python3 run_pipeline.py --browse-ai-screenshot
 
 # Skip Browse AI, scrape forward points from investing.com instead
-python run_pipeline.py --no-browse-ai
+python3 run_pipeline.py --no-browse-ai
 
 # Use Selenium for more reliable scraping
-python run_pipeline.py --selenium
+python3 run_pipeline.py --selenium
 
 # Skip Roam Research posting
-python run_pipeline.py --no-roam
+python3 run_pipeline.py --no-roam
 
 # Only update input files, skip calculation
-python run_pipeline.py --skip-calc
+python3 run_pipeline.py --skip-calc
 
 # Recovery: read forward points from Notion table (after Browse AI failure)
-python run_pipeline.py --notion-fallback
+python3 run_pipeline.py --notion-fallback
 ```
 
 #### Browse AI failure flow
@@ -96,7 +96,7 @@ Credentials stored in `Notion` file (NOTION_API_TOKEN, NOTION_DATABASE_ID, EMAIL
 
 ### Post latest rates to Roam Research
 ```bash
-python post_to_roam.py
+python3 post_to_roam.py
 ```
 Credentials stored in `Roam_Research` file (ROAM_API_TOKEN, ROAM_GRAPH_NAME).
 
