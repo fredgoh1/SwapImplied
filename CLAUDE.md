@@ -14,7 +14,7 @@ This repository calculates **USD/SGD FX swap implied SGD interest rates** using 
 
 ### Install dependencies
 ```bash
-pip install pandas openpyxl requests beautifulsoup4 numpy selenium webdriver-manager
+pip install pandas openpyxl requests beautifulsoup4 numpy selenium webdriver-manager yfinance matplotlib
 ```
 
 ### Calculate implied rates (main calculation)
@@ -100,6 +100,40 @@ python3 post_to_roam.py
 ```
 Credentials stored in `Roam_Research` file (ROAM_API_TOKEN, ROAM_GRAPH_NAME).
 
+### Build historical dataset (one-time backfill)
+```bash
+python3 build_historical_dataset.py
+```
+Reads Barchart SOFR CSVs + `FWD_Points_Actual_Historical.xlsx`, fetches USDSGD spot via
+yfinance, runs the full CIP calculation, and writes `output_historical_1m/3m/6m.xlsx`
+covering Jan 2025 – Feb 2026.
+
+Required source files (placed at project root):
+- `sofermm1rt_daily_historical-data-03-24-2026.csv` — 1M CME Term SOFR (Barchart)
+- `sofermm3rt_daily_historical-data-03-24-2026.csv` — 3M CME Term SOFR (Barchart)
+- `sofermm6rt_daily_historical-data-03-24-2026.csv` — 6M CME Term SOFR (Barchart)
+- `FWD_Points_Actual_Historical.xlsx` — USDSGD forward points 1M/3M/6M (columns: Date, 1-Month, 3-Month, 6-Month)
+
+### Moving average breakout analysis and charts
+```bash
+python3 plot_ma_analysis.py
+```
+Merges `output_historical_*.xlsx` + `output_master_*.xlsx` into `output_combined_*.xlsx`,
+computes a 60-day MA on `Implied_SGD_Rate_Pct`, and produces 8 PNG charts:
+
+| File | Description |
+|------|-------------|
+| `swap_implied_ma_analysis_recent.png` | 3-panel combined, Oct 2025 – present |
+| `swap_implied_ma_1m_recent.png` | 1M only, Oct 2025 – present |
+| `swap_implied_ma_3m_recent.png` | 3M only, Oct 2025 – present |
+| `swap_implied_ma_6m_recent.png` | 6M only, Oct 2025 – present |
+| `swap_implied_ma_analysis_full.png` | 3-panel combined, full history |
+| `swap_implied_ma_1m_full.png` | 1M only, full history |
+| `swap_implied_ma_3m_full.png` | 3M only, full history |
+| `swap_implied_ma_6m_full.png` | 6M only, full history |
+
+Also prints a console breakout summary (latest rate vs MA60).
+
 ## Architecture
 
 ### Data Flow
@@ -130,6 +164,8 @@ investing.com instead.
 **`HolidayCalendar`** (`calc_swap_implied/calculate_swap_implied_rates.py`):
 - Manages US (NY SIFMA) and Singapore (MOM) holiday calendars
 - Determines T+2 spot settlement dates where both markets are open
+- Supports multiple years: `HolidayCalendar(years=[2025, 2026])` — holidays hardcoded for 2025 and 2026
+- Backward-compatible: `HolidayCalendar()` defaults to 2026; `HolidayCalendar(year=2025)` also works
 
 **`SwapImpliedRateCalculator`** (`calc_swap_implied/calculate_swap_implied_rates.py`):
 - Implements CIP formula: `r_SGD = [(F/S) × (1 + r_USD × days/360) - 1] × (365/days)`
@@ -169,8 +205,21 @@ Each `input_master_{tenor}.xlsx` must have columns: `Date`, `{x}mSOFR`, `USDSGD_
 Each `output_master_{tenor}.xlsx` has columns: `Trade_Date`, `Spot_Date`, `Forward_Date`, `Actual_Days`, `USD_SOFR_{x}M_Pct`, `Spot_Rate`, `Forward_Points_pips`, `Forward_Rate`, `Implied_SGD_Rate_Pct`, `Rate_Diff_bps`
 
 ## Data Sources
-- **Term SOFR**: global-rates.com (CME Term SOFR)
-- **Forward Points**: investing.com (USD/SGD forward rates) or Browse.AI (table bot auto-parse / screenshot capture)
-- **FX Spot**: exchangerate-api.com (free, no API key)
-- **US Holidays**: NY SIFMA calendar
-- **Singapore Holidays**: Ministry of Manpower (MOM)
+- **Term SOFR (daily)**: global-rates.com (CME Term SOFR) — scraped by daily pipeline
+- **Term SOFR (historical)**: Barchart.com tickers `SOFERMM1.RT`, `SOFERMM3.RT`, `SOFERMM6.RT` — manual CSV download
+- **Forward Points (daily)**: investing.com or Browse.AI (table bot auto-parse / screenshot capture)
+- **Forward Points (historical)**: `FWD_Points_Actual_Historical.xlsx` — manually sourced from Bloomberg/ABS
+- **FX Spot (daily)**: exchangerate-api.com (free, no API key)
+- **FX Spot (historical)**: Yahoo Finance via yfinance (ticker `USDSGD=X`)
+- **US Holidays**: NY SIFMA calendar (hardcoded for 2025–2026)
+- **Singapore Holidays**: Ministry of Manpower (MOM) (hardcoded for 2025–2026)
+
+## Historical Data Files (project root)
+| File | Contents | Date range |
+|------|----------|------------|
+| `sofermm1rt_daily_historical-data-03-24-2026.csv` | 1M CME Term SOFR fixings | 2019–2026-03-23 |
+| `sofermm3rt_daily_historical-data-03-24-2026.csv` | 3M CME Term SOFR fixings | 2019–2026-03-23 |
+| `sofermm6rt_daily_historical-data-03-24-2026.csv` | 6M CME Term SOFR fixings | 2019–2026-03-23 |
+| `FWD_Points_Actual_Historical.xlsx` | USDSGD 1M/3M/6M forward points (pips) | 2025-01-01–2026-02-27 |
+| `output_historical_1m/3m/6m.xlsx` | Calculated implied SGD rates (historical) | 2025-01-02–2026-02-27 |
+| `output_combined_1m/3m/6m.xlsx` | Historical + master merged, deduplicated | 2025-01-02–present |

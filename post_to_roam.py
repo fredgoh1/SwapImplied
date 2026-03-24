@@ -185,7 +185,7 @@ def ensure_daily_note(token, graph, page_title, page_uid):
 
 def post_rates_to_roam(token, graph, page_uid, rates):
     """Post swap-implied rates as a block on the daily note page."""
-    parts = ["Swap-Implied SGD Rates -"]
+    parts = ["> [!Summary]+ **Swap Implied SGD Rates**  -"]
     for tenor in TENORS:
         if tenor in rates:
             parts.append(f"{tenor.upper()}: {rates[tenor]:.4f}%")

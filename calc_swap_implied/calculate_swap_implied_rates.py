@@ -34,60 +34,105 @@ import re
 
 class HolidayCalendar:
     """Manages US and Singapore holiday calendars with automatic fetching"""
-    
-    def __init__(self, year=2026):
-        self.year = year
+
+    def __init__(self, year=2026, years=None):
+        # Support both single year (backward compat) and list of years
+        if years is not None:
+            self.years = years if isinstance(years, list) else [years]
+        else:
+            self.years = year if isinstance(year, list) else [year]
+        self.year = self.years[0]  # Keep for backward compat
         self.us_holidays = self._get_us_holidays()
         self.sg_holidays = self._get_sg_holidays()
-    
+
+    def _get_us_holidays_for_year(self, year):
+        """US banking holidays (NY SIFMA) for a given year."""
+        holidays_by_year = {
+            2025: [
+                datetime(2025, 1, 1),   # New Year's Day
+                datetime(2025, 1, 20),  # MLK Day
+                datetime(2025, 2, 17),  # Presidents Day
+                datetime(2025, 4, 18),  # Good Friday
+                datetime(2025, 5, 26),  # Memorial Day
+                datetime(2025, 7, 4),   # Independence Day
+                datetime(2025, 9, 1),   # Labor Day
+                datetime(2025, 10, 13), # Columbus Day
+                datetime(2025, 11, 11), # Veterans Day
+                datetime(2025, 11, 27), # Thanksgiving
+                datetime(2025, 12, 25), # Christmas
+            ],
+            2026: [
+                datetime(2026, 1, 1),   # New Year's Day
+                datetime(2026, 1, 19),  # MLK Day
+                datetime(2026, 2, 16),  # Presidents Day
+                datetime(2026, 4, 3),   # Good Friday
+                datetime(2026, 5, 25),  # Memorial Day
+                datetime(2026, 7, 3),   # Independence Day (observed)
+                datetime(2026, 9, 7),   # Labor Day
+                datetime(2026, 10, 12), # Columbus Day
+                datetime(2026, 11, 11), # Veterans Day
+                datetime(2026, 11, 26), # Thanksgiving
+                datetime(2026, 12, 25), # Christmas
+            ],
+        }
+        return holidays_by_year.get(year, [])
+
+    def _get_sg_holidays_for_year(self, year):
+        """Singapore public holidays (MOM) for a given year."""
+        holidays_by_year = {
+            2025: [
+                datetime(2025, 1, 1),   # New Year's Day
+                datetime(2025, 1, 29),  # Chinese New Year Day 1
+                datetime(2025, 1, 30),  # Chinese New Year Day 2
+                datetime(2025, 3, 31),  # Hari Raya Puasa
+                datetime(2025, 4, 18),  # Good Friday
+                datetime(2025, 5, 1),   # Labour Day
+                datetime(2025, 5, 12),  # Vesak Day
+                # Jun 7 (Sat) Hari Raya Haji - falls on Saturday, no substitute
+                datetime(2025, 8, 11),  # National Day observed (Aug 9 is Saturday)
+                datetime(2025, 10, 20), # Deepavali
+                datetime(2025, 12, 25), # Christmas Day
+            ],
+            2026: [
+                datetime(2026, 1, 1),   # New Year's Day
+                datetime(2026, 2, 17),  # Chinese New Year
+                datetime(2026, 2, 18),  # Chinese New Year
+                # Mar 21 (Sat) Hari Raya Puasa - falls on Saturday, no substitute
+                datetime(2026, 4, 3),   # Good Friday
+                datetime(2026, 5, 1),   # Labour Day
+                datetime(2026, 5, 27),  # Hari Raya Haji
+                # May 31 (Sun) Vesak Day - observed on Monday
+                datetime(2026, 6, 1),   # Vesak Day observed
+                # Aug 9 (Sun) National Day - observed on Monday
+                datetime(2026, 8, 10),  # National Day observed
+                # Nov 8 (Sun) Deepavali - observed on Monday
+                datetime(2026, 11, 9),  # Deepavali observed
+                datetime(2026, 12, 25), # Christmas Day
+            ],
+        }
+        return holidays_by_year.get(year, [])
+
     def _get_us_holidays(self):
         """
-        Get US banking holidays for the year
+        Get US banking holidays for all configured years
         Source: NY SIFMA recommended calendar
         """
-        # Standard US banking holidays for 2026
-        holidays = [
-            datetime(2026, 1, 1),   # New Year's Day
-            datetime(2026, 1, 19),  # MLK Day
-            datetime(2026, 2, 16),  # Presidents Day
-            datetime(2026, 4, 3),   # Good Friday
-            datetime(2026, 5, 25),  # Memorial Day
-            datetime(2026, 7, 3),   # Independence Day (observed)
-            datetime(2026, 9, 7),   # Labor Day
-            datetime(2026, 10, 12), # Columbus Day
-            datetime(2026, 11, 11), # Veterans Day
-            datetime(2026, 11, 26), # Thanksgiving
-            datetime(2026, 12, 25), # Christmas
-        ]
-        
-        print(f"Loaded {len(holidays)} US banking holidays for {self.year}")
+        holidays = []
+        for year in self.years:
+            holidays.extend(self._get_us_holidays_for_year(year))
+        print(f"Loaded {len(holidays)} US banking holidays for years {self.years}")
         return holidays
-    
+
     def _get_sg_holidays(self):
         """
-        Get Singapore public holidays for the year
+        Get Singapore public holidays for all configured years
         Source: Ministry of Manpower (MOM) official calendar
         URL: https://www.mom.gov.sg/employment-practices/public-holidays
         """
-        # Official Singapore public holidays for 2026 from MOM
-        holidays = [
-            datetime(2026, 1, 1),   # New Year's Day
-            datetime(2026, 2, 17),  # Chinese New Year
-            datetime(2026, 2, 18),  # Chinese New Year
-            # Mar 21 (Sat) Hari Raya Puasa - falls on Saturday, no substitute
-            datetime(2026, 4, 3),   # Good Friday
-            datetime(2026, 5, 1),   # Labour Day
-            datetime(2026, 5, 27),  # Hari Raya Haji
-            # May 31 (Sun) Vesak Day - observed on Monday
-            datetime(2026, 6, 1),   # Vesak Day observed
-            # Aug 9 (Sun) National Day - observed on Monday
-            datetime(2026, 8, 10),  # National Day observed
-            # Nov 8 (Sun) Deepavali - observed on Monday
-            datetime(2026, 11, 9),  # Deepavali observed
-            datetime(2026, 12, 25), # Christmas Day
-        ]
-        
-        print(f"Loaded {len(holidays)} Singapore public holidays for {self.year}")
+        holidays = []
+        for year in self.years:
+            holidays.extend(self._get_sg_holidays_for_year(year))
+        print(f"Loaded {len(holidays)} Singapore public holidays for years {self.years}")
         return holidays
     
     def is_business_day(self, date):
@@ -447,10 +492,10 @@ def process_excel_file(input_file, output_file, tenor=None, verbose=True):
     print(f"Using Forward Points column: '{fwd_pts_col}'")
     print()
     
-    # Initialize calculators
-    first_year = pd.to_datetime(df['Date'].iloc[0]).year
-    print(f"Initializing holiday calendars for year {first_year}...")
-    calendar = HolidayCalendar(year=first_year)
+    # Initialize calculators — collect all years present in the dataset
+    all_years = sorted(pd.to_datetime(df['Date']).dt.year.unique().tolist())
+    print(f"Initializing holiday calendars for years {all_years}...")
+    calendar = HolidayCalendar(years=all_years)
     calculator = SwapImpliedRateCalculator(calendar, tenor=tenor)
     print()
     
