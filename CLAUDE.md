@@ -100,6 +100,19 @@ python3 post_to_roam.py
 ```
 Credentials stored in `Roam_Research` file (ROAM_API_TOKEN, ROAM_GRAPH_NAME).
 
+Roam block format (single block, soft line breaks):
+```
+> [!Summary]+ **Swap Implied SGD Rates**  - | 1M: X.XXXX% | 3M: X.XXXX% | 6M: X.XXXX%
+SOFR |1m: X.XXXX% | 3m: X.XXXX% |6m: X.XXXX%
+Hedging Costs|1m: XX.XX | 3m: XX.XX | 6m: XX.XX
+```
+
+### Retrofit output_master files with Hedging_Cost_bps (one-time / idempotent)
+```bash
+python3 add_hedging_cost.py
+```
+Adds `Hedging_Cost_bps` column immediately after `Rate_Diff_bps` in each `output_master_*m.xlsx`. Safe to re-run.
+
 ### Build historical dataset (one-time backfill)
 ```bash
 python3 build_historical_dataset.py
@@ -202,7 +215,12 @@ investing.com instead.
 Each `input_master_{tenor}.xlsx` must have columns: `Date`, `{x}mSOFR`, `USDSGD_FX`, `ForwardPoints`
 
 ### Output File Format
-Each `output_master_{tenor}.xlsx` has columns: `Trade_Date`, `Spot_Date`, `Forward_Date`, `Actual_Days`, `USD_SOFR_{x}M_Pct`, `Spot_Rate`, `Forward_Points_pips`, `Forward_Rate`, `Implied_SGD_Rate_Pct`, `Rate_Diff_bps`
+Each `output_master_{tenor}.xlsx` has columns: `Trade_Date`, `Spot_Date`, `Forward_Date`, `Actual_Days`, `USD_SOFR_{x}M_Pct`, `Spot_Rate`, `Forward_Points_pips`, `Forward_Rate`, `Implied_SGD_Rate_Pct`, `Rate_Diff_bps`, `Hedging_Cost_bps`
+
+| Column | Formula | Purpose |
+|---|---|---|
+| `Rate_Diff_bps` | `(SGD_implied − SOFR_ACT360) × 100` | Legacy / backward compatibility |
+| `Hedging_Cost_bps` | `(SGD_implied − SOFR×365/360) × 100` | Correct p.a. hedging cost (consistent ACT/365 day count) |
 
 ## Data Sources
 - **Term SOFR (daily)**: global-rates.com (CME Term SOFR) — scraped by daily pipeline

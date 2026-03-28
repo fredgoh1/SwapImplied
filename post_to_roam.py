@@ -57,7 +57,10 @@ def load_credentials():
 def get_latest_rates():
     """Read the latest row from each output_master file.
 
-    Returns (date, dict) where dict maps tenor to rate percentage.
+    Returns (date, dict) where dict maps tenor to a sub-dict with keys:
+        'implied'      - Implied_SGD_Rate_Pct
+        'sofr'         - USD_SOFR_{x}M_Pct (raw ACT/360 Term SOFR as scraped)
+        'hedging_cost' - Hedging_Cost_bps
     All files must share the same latest date.
     """
     rates = {}
@@ -75,8 +78,13 @@ def get_latest_rates():
         row = df.loc[df[date_col].idxmax()]
 
         row_date = row[date_col].date()
-        rate = row["Implied_SGD_Rate_Pct"]
-        rates[tenor] = rate
+
+        sofr_col = next((c for c in df.columns if c.startswith("USD_SOFR") and c.endswith("_Pct")), None)
+        rates[tenor] = {
+            "implied": row["Implied_SGD_Rate_Pct"],
+            "sofr": row[sofr_col] if sofr_col else None,
+            "hedging_cost": row["Hedging_Cost_bps"] if "Hedging_Cost_bps" in df.columns else None,
+        }
 
         if latest_date is None:
             latest_date = row_date
@@ -188,9 +196,17 @@ def post_rates_to_roam(token, graph, page_uid, rates):
     parts = ["> [!Summary]+ **Swap Implied SGD Rates**  -"]
     for tenor in TENORS:
         if tenor in rates:
-            parts.append(f"{tenor.upper()}: {rates[tenor]:.4f}%")
+            parts.append(f"{tenor.upper()}: {rates[tenor]['implied']:.4f}%")
 
     block_string = " | ".join(parts)
+
+    sofr_parts = [f"{t}: {rates[t]['sofr']:.4f}%" for t in TENORS if t in rates and rates[t]["sofr"] is not None]
+    if sofr_parts:
+        block_string += "\nSOFR |" + " | ".join(sofr_parts)
+
+    hc_parts = [f"{t}: {rates[t]['hedging_cost']:.2f}" for t in TENORS if t in rates and rates[t]["hedging_cost"] is not None]
+    if hc_parts:
+        block_string += "\nHedging Costs|" + " | ".join(hc_parts)
 
     actions = [
         {
@@ -214,7 +230,8 @@ def main():
     print(f"Roam page: {page_title} (uid: {page_uid})")
     for tenor in TENORS:
         if tenor in rates:
-            print(f"  {tenor.upper()}: {rates[tenor]:.4f}%")
+            r = rates[tenor]
+            print(f"  {tenor.upper()}: {r['implied']:.4f}%  |  SOFR: {r['sofr']:.4f}%  |  Hedging Cost: {r['hedging_cost']:.2f} bps")
 
     actual_uid = ensure_daily_note(token, graph, page_title, page_uid)
     post_rates_to_roam(token, graph, actual_uid, rates)

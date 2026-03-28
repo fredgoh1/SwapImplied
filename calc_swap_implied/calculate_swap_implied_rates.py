@@ -339,9 +339,12 @@ class SwapImpliedRateCalculator:
             spot_rate, forward_rate, sofr_rate, actual_days
         )
         
-        # Calculate rate differential
+        # Calculate rate differential (raw, ACT/360 SOFR — legacy)
         rate_diff_bps = (implied_sgd_rate - sofr_rate) * 100
-        
+
+        # Calculate hedging cost (SOFR rebased to ACT/365 for consistent day count)
+        hedging_cost_bps = (implied_sgd_rate - sofr_rate * (365 / 360)) * 100
+
         if verbose:
             print(f"\nCalculation for Trade Date: {trade_date.strftime('%Y-%m-%d')} [{self.tenor}]")
             print(f"  Spot Date:        {spot_date.strftime('%Y-%m-%d (%A)')}")
@@ -360,7 +363,8 @@ class SwapImpliedRateCalculator:
             'Actual_Days': actual_days,
             'Forward_Rate': forward_rate,
             'Implied_SGD_Rate_Pct': implied_sgd_rate,
-            'Rate_Diff_bps': rate_diff_bps
+            'Rate_Diff_bps': rate_diff_bps,
+            'Hedging_Cost_bps': hedging_cost_bps
         }
 
 
@@ -533,7 +537,8 @@ def process_excel_file(input_file, output_file, tenor=None, verbose=True):
         fwd_pts_col,
         'Forward_Rate',
         'Implied_SGD_Rate_Pct',
-        'Rate_Diff_bps'
+        'Rate_Diff_bps',
+        'Hedging_Cost_bps'
     ]
     output_df = output_df[output_cols]
     
